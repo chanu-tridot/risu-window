@@ -34,9 +34,13 @@ def test_global_lore_has_two_entries(parsed):
 
 
 def test_global_lore_entry_shape(parsed):
-    entry = parsed["globalLore"][0]
-    assert entry["key"] == "<두 번째 만남>"
-    assert "또 뵙네요" in entry["content"]
+    first = parsed["globalLore"][0]
+    assert first["key"] == "<두 번째 만남>"
+    assert "또 뵙네요" in first["content"]
+
+    second = parsed["globalLore"][1]
+    assert second["key"] == "<비밀의 공개>"
+    assert "사실은" in second["content"]
 
 
 def test_post_history_empty_string_when_marker(parsed):
