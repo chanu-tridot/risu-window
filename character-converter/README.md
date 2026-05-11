@@ -15,6 +15,7 @@ examples/kitagawa-marin.md   │                        (LLM이 생성)         
 - **`.md`**: 사람이 읽기 좋은 분석 문서. 팀 리뷰는 이 파일을 본다.
 - **`.json`**: RisuAI native 스키마(`database.bin` 내부 캐릭터 JSON과 동일 구조). 후속 단계(import, 다른 파이프라인 연계)용.
 - 변환 로직은 100% `prompt.md`에 있음. 품질 튜닝은 `prompt.md`만 수정.
+- **모델 선택**: PoC는 Claude Sonnet 4.6 사용. 설계 spec은 초기에 Opus 4.7을 1차로 명시했으나, 실제 변환 결과의 품질·비용 트레이드오프를 보고 Sonnet 4.6으로 정착. 더 어려운 캐릭터에서 품질이 부족하면 `convert.py`의 `MODEL` 상수를 `claude-opus-4-7`로 바꿔 비교 가능.
 
 ## 실행
 
