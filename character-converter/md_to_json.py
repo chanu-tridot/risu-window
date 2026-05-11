@@ -7,6 +7,12 @@ from typing import Any
 _HEADER_RE = re.compile(r"^# 캐릭터:\s*(.+?)\s*$", re.MULTILINE)
 _SECTION_SPLIT_RE = re.compile(r"^## (.+?)\s*$", re.MULTILINE)
 _LORE_ENTRY_SPLIT_RE = re.compile(r"^### (.+?)\s*$", re.MULTILINE)
+_TRAILING_HR_RE = re.compile(r"\n*---\s*$")
+
+
+def _clean(text: str) -> str:
+    """Trim whitespace and any trailing `---` horizontal-rule decoration."""
+    return _TRAILING_HR_RE.sub("", text).strip()
 
 
 def parse_md_to_json(md_text: str) -> dict[str, Any]:
@@ -14,10 +20,10 @@ def parse_md_to_json(md_text: str) -> dict[str, Any]:
     name = _extract_name(md_text)
     sections = _split_sections(md_text)
 
-    desc = sections.get("desc", "").strip()
-    first_message = sections.get("firstMessage", "").strip()
+    desc = _clean(sections.get("desc", ""))
+    first_message = _clean(sections.get("firstMessage", ""))
     global_lore_md = sections.get("globalLore", "")
-    post_history_raw = sections.get("postHistoryInstructions", "").strip()
+    post_history_raw = _clean(sections.get("postHistoryInstructions", ""))
     post_history = "" if post_history_raw in {"(비어있음)", ""} else post_history_raw
 
     return {
@@ -64,6 +70,6 @@ def _parse_lore_entries(lore_md: str) -> list[dict[str, str]]:
     entries: list[dict[str, str]] = []
     for i in range(1, len(parts), 2):
         key = parts[i].strip()
-        content = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        content = _clean(parts[i + 1]) if i + 1 < len(parts) else ""
         entries.append({"key": key, "content": content})
     return entries

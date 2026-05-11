@@ -61,3 +61,32 @@ def test_output_is_json_serializable(parsed):
 def test_missing_header_raises():
     with pytest.raises(ValueError):
         parse_md_to_json("no header here")
+
+
+def test_duplicate_section_headings_last_wins():
+    md = (
+        "# 캐릭터: 중복테스트\n"
+        "## desc\nfirst body\n"
+        "## desc\nsecond body\n"
+        "## firstMessage\nintro\n"
+        "## globalLore\n\n"
+        "## postHistoryInstructions\n(비어있음)\n"
+    )
+    parsed = parse_md_to_json(md)
+    # Documented behavior: duplicate `## desc` silently keeps the LAST occurrence.
+    # If this ever needs to raise instead, update both the parser and this test.
+    assert parsed["desc"] == "second body"
+
+
+def test_trailing_hr_artifact_stripped():
+    md = (
+        "# 캐릭터: 트레일러테스트\n"
+        "## desc\nbody text\n\n---\n"
+        "## firstMessage\nintro line\n\n---\n"
+        "## globalLore\n\n### <엔트리>\nlore body\n\n---\n"
+        "## postHistoryInstructions\n(비어있음)\n"
+    )
+    parsed = parse_md_to_json(md)
+    assert not parsed["desc"].rstrip().endswith("---")
+    assert not parsed["firstMessage"].rstrip().endswith("---")
+    assert not parsed["globalLore"][0]["content"].rstrip().endswith("---")
