@@ -40,22 +40,22 @@ def _extract_name(md_text: str) -> str:
 
 
 def _split_sections(md_text: str) -> dict[str, str]:
-    """Split markdown by `## heading` lines into {heading: body} dict.
+    """Split markdown by `## heading` lines into {first_token: body} dict.
 
-    Body is everything between this `## heading` and the next `## heading` (or EOF).
-    Each section is stored under both the full heading text and its first
-    whitespace-delimited token, so callers can look up `## desc` as `"desc"`
-    even when other sections (e.g. `## 프롬프트 구조 요약`) have multi-word
-    headings.
+    Body is everything between this `## heading` and the next `## heading`
+    (or EOF). Sections are keyed by the heading's first whitespace-delimited
+    token, so multi-word headings like `## 프롬프트 구조 요약` simply key
+    under `"프롬프트"` and are ignored by callers that look up `"desc"`,
+    `"firstMessage"`, etc.
     """
     parts = _SECTION_SPLIT_RE.split(md_text)
     sections: dict[str, str] = {}
     for i in range(1, len(parts), 2):
         heading = parts[i].strip()
         body = parts[i + 1] if i + 1 < len(parts) else ""
-        key = heading.split()[0] if heading else heading
-        sections[key] = body
-        sections[heading] = body
+        if heading:
+            key = heading.split()[0]
+            sections[key] = body
     return sections
 
 
