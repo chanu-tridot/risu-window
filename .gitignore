@@ -12,3 +12,6 @@ dbbackup-*
 # OS
 Thumbs.db
 .DS_Store
+
+# OMC (oh-my-claudecode) — session-local state, wiki, plans, notepad
+.omc/
