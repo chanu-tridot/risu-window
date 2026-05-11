@@ -20,7 +20,7 @@ def test_name_extracted(parsed):
 def test_desc_contains_basic_info_heading(parsed):
     assert "### Basic Info" in parsed["desc"]
     assert "테스트인물" in parsed["desc"]
-    assert "## " not in parsed["desc"]  # 다음 ## 섹션 침범 안 됨
+    assert "\n## " not in parsed["desc"]  # 다음 ## 섹션 침범 안 됨
 
 
 def test_first_message_contains_user_variable(parsed):
