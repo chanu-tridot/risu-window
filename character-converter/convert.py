@@ -13,10 +13,12 @@ import sys
 from pathlib import Path
 
 import anthropic
+from dotenv import load_dotenv
 
 from md_to_json import parse_md_to_json
 
 ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env")
 PROMPT_PATH = ROOT / "prompt.md"
 EXAMPLES_DIR = ROOT / "examples"
 INPUTS_DIR = ROOT / "inputs"
