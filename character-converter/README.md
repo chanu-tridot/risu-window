@@ -1,67 +1,210 @@
-# character-converter (PoC)
+# character-converter
 
-작가 캐릭터 시트(한국어 `.md`)를 RisuAI 스타일 분석 문서(`.md`)와 RisuAI native JSON(`.json`)으로 변환하는 PoC.
-
-## 무엇을 하는가
+작가가 한국어로 작성한 캐릭터 시트를 RisuAI 네이티브 character JSON으로 자동 변환합니다. 빠진 필드(말투 예문·트리비아 등 FREE 영역)는 LLM이 채우고, 고유명사·수치(LOCKED 영역)는 입력에 있는 것만 보존합니다.
 
 ```
-inputs/<이름>.md             ┐
-prompt.md                    │
-examples/neta.md             ├─► Claude Sonnet 4.6 ─► outputs/<이름>.md ─► outputs/<이름>.json
-examples/kitagawa-marin.md   │                        (LLM이 생성)         (결정론적 파서)
-└─ 작가 시트 입력 ────────────┘
+input/<이름>.md
+   │
+   ▼  Anthropic API (system=prompt.md + few-shot, user=<character sheet>)
+   │
+output/md/<이름>.md           ← 사람이 읽는 RisuAI 분석 문서 (팀 검수용)
+   │
+   ▼  merger.py (결정론적, 참조 기반, no-LLM)
+   │
+output/json/<이름>.json       ← 캐논 RisuAI character 인터페이스 JSON (32 필드)
+   │
+   ▼  assembler.py (옵션, --assemble 플래그)
+   │
+output/json/<이름>.assembled.json   ← LLM-ready messages[] (Anthropic API에 바로 던질 수 있음)
 ```
 
-- **`.md`**: 사람이 읽기 좋은 분석 문서. 팀 리뷰는 이 파일을 본다.
-- **`.json`**: RisuAI native 스키마(`database.bin` 내부 캐릭터 JSON과 동일 구조). 후속 단계(import, 다른 파이프라인 연계)용.
-- 변환 로직은 100% `prompt.md`에 있음. 품질 튜닝은 `prompt.md`만 수정.
-- **모델 선택**: PoC는 Claude Sonnet 4.6 사용. 설계 spec은 초기에 Opus 4.7을 1차로 명시했으나, 실제 변환 결과의 품질·비용 트레이드오프를 보고 Sonnet 4.6으로 정착. 더 어려운 캐릭터에서 품질이 부족하면 `convert.py`의 `MODEL` 상수를 `claude-opus-4-7`로 바꿔 비교 가능.
+## 디렉토리 구조
 
-## 실행
+```
+character-converter/
+├── main.py              # 진입점 — Anthropic API 호출 + 머저 + 어셈블러 트리거
+├── merger.py            # md → RisuAI character JSON
+├── assembler.py         # JSON + 글로벌 preset → LLM-ready messages[]
+├── prompt.md            # 시스템 프롬프트 (LOCKED/FREE 정책 명시)
+│
+├── input/               # 작가 캐릭터 시트 (변환 입력)
+│   ├── 백서희.md
+│   ├── 차아진.md
+│   └── 이연.md
+│
+├── output/              # 변환 결과 (재생성 가능, 커밋됨)
+│   ├── md/<이름>.md             # RisuAI 분석 문서
+│   └── json/<이름>.json         # 캐논 character 인터페이스 JSON
+│       └── <이름>.assembled.json (옵션)
+│
+├── references/          # RisuAI 실 캐릭터 9종 (database.bin 추출)
+│   ├── md/   # neta, kitagawa-marin (few-shot 사용), 그 외 7종 참고용
+│   └── json/
+│
+├── scripts/qa_chat_test.py   # 변환물 실 챗 동작 검증용 (옵션)
+├── tests/               # pytest (33 tests)
+├── requirements.txt
+├── .env.example
+└── .gitignore
+```
+
+## 설정
 
 ```bash
 cd character-converter
+python -m venv .venv
+source .venv/bin/activate              # PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env  # ANTHROPIC_API_KEY 채우기
-
-python convert.py inputs/차아진.md   # 단일
-python convert.py --all              # inputs/*.md 전부
+cp .env.example .env                    # PowerShell: Copy-Item .env.example .env
+# .env 에 ANTHROPIC_API_KEY=sk-ant-... 채우기
 ```
 
-PowerShell 사용자는 `cp` 대신 `Copy-Item`.
+## 사용법
 
-## 팀 리뷰 체크리스트
+### 단일 캐릭터 변환
 
-각 `outputs/<이름>.md`에 대해 다음을 확인:
+```bash
+python main.py 백서희                   # 기본 모델: opus
+python main.py 백서희.md --model sonnet
+python main.py input/백서희.md          # 절대/상대 경로도 OK
+```
 
-1. **구조** — `# 캐릭터:` 헤더 + `## desc`, `## firstMessage`, `## globalLore`, `## postHistoryInstructions` 섹션이 모두 있는가? `outputs/<이름>.json`이 valid JSON인가?
-2. **할루시네이션** — `inputs/<이름>.md`와 나란히 놓고 비교: 출력에 입력에 없는 사실(외모 측정치, 가족·학교·회사·친구 이름, 구체 수치)이 추가되지 않았는가?
-3. **톤** — `firstMessage`가 사건 1번의 주요 비트(만남·갈등·반전·결말)를 모두 살렸는가? `globalLore` 각 엔트리가 원본 사건의 핵심 갈등·대사를 보존했는가?
-4. **언어** — 본문이 한국어인가? 영어는 헤딩 키워드(`### Basic Info` 등)에만 있는가?
-5. **중복 방지** — 사건 1번이 `globalLore`에 중복되지 않았는가?
+### 어셈블된 messages[] 까지
 
-## 파일
+```bash
+python main.py 백서희 --assemble        # output/json/백서희.assembled.json 추가 생성
+```
 
-- `prompt.md` — 메타 프롬프트 (변환 규칙 + few-shot 슬롯)
-- `examples/` — 출력 포맷 레퍼런스 (neta, kitagawa-marin)
-- `inputs/` — 작가 캐릭터 시트 3종
-- `outputs/` — 변환 결과 페어 (`.md` + `.json`)
-- `convert.py` — CLI + Claude Sonnet 4.6 API 호출 + dotenv 로딩
-- `md_to_json.py` — `.md` → RisuAI native JSON 파서 (정규식 기반)
-- `tests/` — 파서 단위 테스트 (9개, 모두 통과)
+### 일괄 처리
 
-## 알려진 한계
+```bash
+python main.py --all --assemble         # input/*.md 전부, 어셈블 포함
+```
 
-- `outputs/`는 실제 RisuAI에 1클릭 import되는 형식이 아니다. `database.bin` 내부 캐릭터 JSON과 같은 모양일 뿐이며, `.png` character card 패키징은 후속 단계.
-- 사건 5개를 모두 별 엔트리로 풀어쓰는 식이라 lorebook이 좀 크다. 실제 RP에서 context 비용을 보고 조정 필요.
-- LLM이 200~400자 globalLore 캡을 항상 지키지는 못한다. 정보 밀도가 높은 사건(예: 차아진 `<재회>`, 백서희 `<선택의 기준>`)에서 400자를 살짝 초과하는 경향이 관찰됨. 후속 단계에서 후처리 검증 로직 또는 더 엄격한 few-shot 예시로 보완 가능.
-- 일부 firstMessage에서 분위기·소품 디테일(시간 길이, 의상 소품, 짧은 환경 묘사)을 LLM이 자체 추가할 수 있다. 사실 차원의 할루시네이션은 아니지만 PoC 검수 시 확인 권장.
-- LLM 출력 포맷이 `prompt.md` 규칙을 벗어나면 `md_to_json.py` 파서가 깨질 수 있다. 출력이 이상하면 먼저 `outputs/<이름>.md`의 헤딩 구조를 눈으로 확인.
+### 모델 선택
 
-## 다음 단계
+| `--model` | 모델 ID | 비용 (대략, 캐릭터당) | 특징 |
+|-----------|---------|---------|------|
+| `opus` (기본) | claude-opus-4-7 | ~$0.50 | Marin 패턴 충실도 ↑, 구조 라벨링(Johari Window 등) 우수 |
+| `sonnet` | claude-sonnet-4-6 | ~$0.05 | 정보 밀도 ↑, 비용 1/10 |
 
-- TavernAI v2 호환 JSON 변환 → `.png` character card 패키징 → 실제 RisuAI import 테스트
-- 첫 변환 결과를 추가 few-shot으로 넣어 품질 부스트
-- 지영님 트랙(avadot.com JSON)과 공유 가능한 중간 표현 정의
-- 400자 캡 강제용 후처리 검증 또는 자동 압축 단계
-- Notion API 직접 연동으로 입력 파이프라인 자동화
+## 입력 → 출력 매핑 (백서희 예시)
+
+| 단계 | 파일 | 내용 |
+|------|------|------|
+| 입력 | `input/백서희.md` (13,574 bytes) | 작가 캐릭터 시트: 기본 프로필 + 내면 프로필 + 사건 5개 |
+| 1단계 산출 | `output/md/백서희.md` (~13KB) | RisuAI 슬롯별 한국어 서술. `## desc`, `## firstMessage`, `## globalLore`, `## postHistoryInstructions` |
+| 2단계 산출 | `output/json/백서희.json` (~15KB, 32 필드) | RisuAI `character` 인터페이스 캐논 JSON. `name`, `desc`, `globalLore[]`, `firstMessage`, `loreSettings`, `chaId` 등. RisuAI 앱이 그대로 import 가능 |
+| 3단계 산출 (옵션) | `output/json/백서희.assembled.json` (~15KB) | LLM-ready `{messages, meta}`. 8개 메시지 (main + chats + jailbreak + lorebook×5). Anthropic API `system` + `messages` 파라미터로 바로 전송 가능 |
+
+### Pass 1 md 출력 구조 (모든 헤더 항상 출력, 빈 섹션은 `없음`)
+
+```markdown
+# 캐릭터: <이름>
+
+## 프롬프트 구조 요약
+| 필드 | 상태 |
+...
+
+## desc
+### Basic Info
+...
+### Appearance
+없음                                    ← 입력에 없으면 정확히 "없음"
+### Personality
+...
+### Background
+...
+### Preference
+...
+### Speech Pattern
+...
+### Trivia
+...
+
+## firstMessage
+...
+
+## globalLore
+### <사건 2 원제>
+...
+
+## postHistoryInstructions
+없음
+```
+
+머저는 `없음`을 빈 문자열로 정규화하여 RisuAI JSON에 반영합니다.
+
+## 새 캐릭터 추가
+
+1. `input/<새이름>.md` 작성. 권장 섹션:
+   ```markdown
+   # <이름>
+
+   ## 기본 프로필
+   - 이름, 성별, 생년월일, 직업, 키·체형, 혈액형, MBTI 등
+
+   ## 내면 프로필
+   인격·심리·관계·갈등 산문 (한 단락 이상)
+
+   ## 사건
+   **1. <사건 제목>**
+   400-600자 줄거리 + 핵심 대사 1-2줄 인용
+   ...
+   **5. <사건 5>**
+   ```
+
+2. `python main.py <새이름> --assemble` 실행
+3. `output/md/<새이름>.md`, `output/json/<새이름>.json`, `output/json/<새이름>.assembled.json` 확인
+
+## Gap-fill 정책 (prompt.md)
+
+**LOCKED — AI가 절대 추가·발명하지 않음**:
+- 외모 측정치 (cm/kg 단위)
+- 인물 고유명 (가족·친구·동료·정략혼 상대 등)
+- 기관·장소 고유명 (학교명·회사명·도시명)
+- 수치 (나이·생일·금액·MBTI·혈액형)
+- 입력에 없는 새 인물 등장
+
+**FREE — AI가 입력의 톤·세계관 안에서 자유롭게 합성**:
+- `### Speech Pattern` 예문 1-3개
+- `### Trivia` 불릿 3-6개
+- `### Personality Keywords` (Johari Window 라벨링)
+- `### Background` 산문 정돈
+- `### Preference` 9 카테고리 분류
+- firstMessage 분위기·소품 묘사
+
+## 참고 캐릭터 (references/)
+
+`database.bin`에서 추출한 실 RisuAI 캐릭터 9종:
+`hayan`, `kang-sieun`, `kitagawa-marin`, `meruru`, `mio`, `neta`, `ovento`, `seo-yunha`, `yeongyeong-family`
+
+이 중 `neta` (Pattern A, desc 집중형) 와 `kitagawa-marin` (Pattern B, lorebook 분리형) 두 캐릭이 prompt.md의 few-shot 레퍼런스로 슬롯됩니다. 나머지 7종은 팀이 "실제 RisuAI 캐릭터가 어떤 모양인지" 직접 보기 위한 참조 데이터.
+
+자신의 RisuAI 앱에서 새 캐릭터를 추출해 `references/`에 추가하려면 [`docs/RisuAI-internals.md`](docs/RisuAI-internals.md) 의 PowerShell 추출 워크플로우 참조.
+
+## 테스트
+
+```bash
+python -m pytest tests/ -q    # 33 tests
+```
+
+세 모듈 테스트:
+- `test_merger.py` — md → JSON 머저 (14 tests)
+- `test_assembler.py` — JSON → messages[] 어셈블러 (19 tests)
+
+## 산출물 실 챗 검증 (옵션)
+
+`scripts/qa_chat_test.py` — 세 캐릭터에 컨텍스트 적절한 사용자 메시지를 던져 실제로 in-character로 작동하는지 검증.
+
+```bash
+python scripts/qa_chat_test.py
+```
+
+결과: 응답 텍스트는 `.gstack/qa-reports/chat-test-results.json`에 저장.
+
+## 비교 리포트
+
+- `docs/comparison/2026-05-12-baekseohee-ab.md` — Opus 4.7 vs Sonnet 4.6 사이드-바이-사이드, Marin 레퍼런스 대비 분석, 잠금 룰 위반 검사.
+- `docs/specs/2026-05-12-character-converter-v2-design.md` — 설계 문서.
+- `docs/character-prompt-storage.md` — RisuAI 슬롯 매핑 진실의 원천.
