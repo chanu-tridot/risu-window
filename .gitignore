@@ -1,17 +1,18 @@
-# 설치파일
-*.exe
-*.msi
+# 이 워크스페이스는 character-converter/ 만 git 에 올림.
+# RisuAI 리버스 분석·로컬 추출본 등 workspace-level 자료는 전부 로컬 전용.
 
-# RisuAI DB (개인 데이터 / API 키 포함)
-*.bin
+# 1) 루트 모든 파일·디렉토리 기본 제외
+/*
 
-# 백업 파일
-*.bak
-dbbackup-*
+# 2) 예외 — 커밋할 항목만 명시
+!/.gitignore
+!/CLAUDE.md
+!/character-converter
 
-# OS
-Thumbs.db
-.DS_Store
-
-# OMC (oh-my-claudecode) — session-local state, wiki, plans, notepad
-.omc/
+# 3) character-converter/ 내부 ignore
+character-converter/.env
+character-converter/.venv/
+character-converter/__pycache__/
+character-converter/**/__pycache__/
+character-converter/.pytest_cache/
+character-converter/*.pyc
