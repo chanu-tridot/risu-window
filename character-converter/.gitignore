@@ -1,4 +1,14 @@
+# Secrets
 .env
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# 가상환경
+.venv/
+venv/
+
+# OMC 세션 로컬 상태
+.omc/

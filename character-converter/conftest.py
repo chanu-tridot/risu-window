@@ -1,4 +1,4 @@
-"""Make `md_to_json` importable when pytest is invoked from the repo root."""
+"""Make `merger`, `assembler`, `main` importable from tests/ regardless of cwd."""
 import sys
 from pathlib import Path
 
